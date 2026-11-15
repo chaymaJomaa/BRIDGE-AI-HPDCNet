@@ -1,0 +1,21 @@
+{
+    "device": "cuda",
+    "batch_size": 1,
+    "input_shape": [
+        1,
+        3,
+        224,
+        224
+    ],
+    "baseline": {
+        "mean_ms": 8.3623119996264,
+        "median_ms": 7.101400002284208,
+        "std_ms": 2.9614585543721854
+    },
+    "proposed": {
+        "mean_ms": 5.723053000001528,
+        "median_ms": 5.421500001830282,
+        "std_ms": 1.2941632577319229
+    },
+    "mean_latency_speedup": 1.4611627744185083
+}
