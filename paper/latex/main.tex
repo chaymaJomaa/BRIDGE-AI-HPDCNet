@@ -1,0 +1,271 @@
+% BRIDGE-AI | Master 2 Intelligent Pervasive Systems
+% Overleaf: create a blank project and upload all files in this ZIP.
+% Compile with pdfLaTeX (IEEEtran is preinstalled on Overleaf).
+% IMPORTANT: Replace/complete author information before submission.
+% Results are from the recorded local experiments, not estimated.
+\documentclass[conference,10pt]{IEEEtran}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{microtype}
+\usepackage{balance}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref} 
+\newcommand{\base}{\textsc{HPDC-Net}}
+\newcommand{\lite}{\textsc{Lite-HPDC-Net}}
+
+\begin{document}
+\title{Reproducing and Compressing HPDC-Net for Tomato Leaf Disease Classification: A Controlled Study of Depthwise Multi-Scale Fusion}
+
+\author{\IEEEauthorblockN{Chayma Jomaa}
+\IEEEauthorblockA{Master 2 -- Intelligent Pervasive Systems\\
+Tunisia\\
+% Add your institution, co-author(s), and email before submission.
+}}
+\maketitle
+
+\begin{abstract}
+Accurate plant disease recognition is useful for smart agriculture, but inference cost can limit practical deployment on resource-constrained devices. This study reproduces the public HPDC-Net implementation for ten-class tomato leaf classification and investigates a single architectural modification: replacing standard $3\times3$ and $5\times5$ convolutions in its two multi-scale fusion modules with depthwise-separable convolutions. On a fixed 18,160-image subset, both models were trained for 200 epochs under the same data split and optimization protocol. The reproduced baseline achieved 99.4521\% test accuracy and 99.2832\% macro-F1. The proposed variant achieved 99.5068\% accuracy and 99.4371\% macro-F1, while reducing trainable parameters from 764,376 to 115,544 (84.88\%) and computation from 1.0147 to 0.2028 GMACs (80.01\%). Mean batch-one GPU latency decreased from 8.3623 to 5.7231 ms (1.46$\times$ speedup). The one-image accuracy difference was not significant under an exact McNemar test ($p=1.000$). The study also documents a reproducibility gap between the published architectural complexity and that measured from the official notebook. The principal finding is improved computational efficiency with comparable predictive performance, not a statistically established accuracy gain.
+\end{abstract}
+
+\begin{IEEEkeywords}
+smart agriculture, crop disease diagnosis, HPDC-Net, depthwise-separable convolution, model compression, reproducibility, edge AI
+\end{IEEEkeywords}
+
+\section{Introduction}
+Plant leaf disease diagnosis is an important application of visual recognition in precision agriculture. Convolutional neural networks (CNNs) can attain high accuracy on curated plant-image datasets \cite{mohanty2016}, although their computational requirements may complicate deployment on embedded and mobile platforms. Lightweight convolutions offer a way to reduce this cost without necessarily sacrificing classification performance \cite{sandler2018}.
+
+Asghar \emph{et al.} introduced HPDC-Net, a hybrid CNN combining efficient feature extraction, pooling, and attention for plant leaf disease recognition \cite{asghar2025}. Their study reports 99.40\% accuracy for PlantVillage tomato leaves, approximately 0.52 million parameters, and 0.06 GFLOPs. However, the authors' publicly available notebook \cite{hpdcgithub} produces different complexity figures when profiled locally. This creates both a reproducibility question and an opportunity for controlled architectural analysis.
+
+The objective of this work is to reproduce the public implementation and test one change: factorizing the costly multi-scale fusion convolutions into depthwise and pointwise operations. The research question is: \emph{Can the computational footprint of the released HPDC-Net implementation be substantially reduced while retaining comparable ten-class tomato leaf classification accuracy?}
+
+The contributions are: (i) a documented reproduction of the official notebook; (ii) an analysis of its dominant computational blocks; and (iii) a one-factor comparison of the original and compressed variants using the same training and testing protocol.
+
+\section{Related Work}
+Mohanty \emph{et al.} demonstrated the potential of deep learning for image-based crop disease recognition, while also motivating caution when transferring controlled-image results to practical settings \cite{mohanty2016}. Efficient CNN architectures such as MobileNetV2 employ depthwise operations to decrease arithmetic cost and memory usage \cite{sandler2018}.
+
+HPDC-Net builds on the same broad efficiency motivation, using depth-wise separable convolutions, dual-path pooling, and channel attention \cite{asghar2025}. The released implementation additionally contains two \texttt{MultiScaleFusionBlock} modules whose parallel standard convolutions are relatively expensive. Rather than modifying data augmentation, the attention mechanism, or the classifier simultaneously, we isolate these fusion convolutions as the sole intervention.
+
+\section{Reproduced Baseline}
+
+\subsection{Dataset and Preprocessing}
+
+The experiments were conducted using the unaugmented
+tomato leaf subset of the PlantVillage dataset, publicly
+available through
+\href{https://data.mendeley.com/datasets/tywbtsjrjv/1}
+{Mendeley Data} \cite{mendeley2019}.
+
+The selected subset contains 18,160 RGB images distributed
+across ten classes, comprising nine disease or infestation
+categories and one healthy category. Following the original
+HPDC-Net implementation, the dataset was partitioned using
+\texttt{splitfolders.ratio} with a fixed random seed of 1314
+and a training/validation/test ratio of
+70\%/20\%/10\%. The resulting subsets contain 12,707,
+3,628, and 1,825 images, respectively. Both architectures
+were evaluated using the same data partitions.
+
+Training data augmentation includes
+\texttt{RandomResizedCrop(224)} and
+\texttt{RandomHorizontalFlip()}. Validation and test images
+are resized to 256 pixels and center-cropped to
+$224\times224$. All images are normalized using ImageNet
+channel statistics. The training random seed is fixed at 42.
+\subsection{Implementation and Reproduction Gap}
+The reference is the official repository at commit \texttt{e2fa627} (full SHA in the reference) \cite{hpdcgithub}. An abstract-syntax-tree comparison between this commit and the local notebook found that all six neural-network class definitions were unchanged. The recorded optimization settings were also unchanged: cross-entropy loss, Adam with learning rate $10^{-3}$, batch size 32, and 200 epochs. Local edits chiefly supported Windows paths, data preparation, and additional diagnostics.
+
+The reconstructed ten-class architecture has 764,376 parameters and 1.0147 GMACs for a $3\times224\times224$ input, as measured with \texttt{ptflops}. These values differ from the paper's approximately 0.52 M parameters and 0.06 GFLOPs \cite{asghar2025}. The paper and repository also differ in their displayed tomato accuracy summary (99.40\% in the publication's discussion versus 99.1\% in the repository README). GMACs and GFLOPs are not interchangeable without an explicit counting convention; accordingly, the complexity mismatch is reported but no numeric FLOPs-to-MACs ratio is asserted. The exact source of the architectural accounting gap has not been established. Table~\ref{tab:reprogap} records the discrepancy explicitly. The paper's values cannot be treated as measurements of our local environment or model profiler.
+
+\begin{table}[t]
+\centering
+\caption{Published results versus reproduced GitHub baseline. Different computation units must not be directly compared.}
+\label{tab:reprogap}
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{lcc}
+\toprule
+Indicator & Publication & Reproduction\\
+\midrule
+Tomato test accuracy & 99.40\% & 99.4521\%\\
+Parameters & approx. 0.52 M & 0.764376 M\\
+Compute & 0.06 GFLOPs & 1.0147 GMACs\\
+Compute tool & Not established & \texttt{ptflops}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The paper used a Colab environment with an NVIDIA Tesla T4, while the present experiment ran on a Windows laptop. Consequently, the original paper's published inference throughput cannot be interpreted as a hardware-matched speed baseline. Furthermore, the public notebook's CPU timing function accumulates five repetitions but divides elapsed time only by the number of images; that displayed throughput is therefore not used in our controlled latency comparison.
+
+\section{Proposed Lightweight Fusion}
+\subsection{Identified Limitation and Hypothesis}
+Layer-wise profiling attributes 450.18 MMACs to \texttt{fusion3} and 449.88 MMACs to \texttt{fusion4}; together they account for approximately 88.7\% of measured MACs and 93.9\% of parameters. Their conventional $3\times3$ and $5\times5$ branches account for most of this cost.
+
+We hypothesize that replacing these two spatial convolutions with depthwise-separable counterparts will lower arithmetic and parameter counts while preserving enough multi-scale information for classification.
+
+\subsection{Single-Factor Architectural Change}
+Let $x\in\mathbb{R}^{C\times H\times W}$. The original fusion block computes
+\begin{equation}
+F_{\mathrm{base}}(x)=\operatorname{Conv}_{1\times1}(x)+\operatorname{Conv}_{3\times3}(x)+\operatorname{Conv}_{5\times5}(x).
+\label{eq:base}
+\end{equation}
+The proposed version retains the $1\times1$ branch, but factorizes the two spatial branches:
+\begin{align}
+F_{\mathrm{lite}}(x)={}&\operatorname{Conv}_{1\times1}(x)\notag\\
+&+\operatorname{PW}_{3}(\operatorname{DW}_{3\times3}(x))\notag\\
+&+\operatorname{PW}_{5}(\operatorname{DW}_{5\times5}(x)),
+\label{eq:lite}
+\end{align}
+where DW operates independently on each input channel and PW denotes a subsequent $1\times1$ convolution. At equal input and output width $C$, a conventional $k\times k$ spatial convolution requires approximately $k^2C^2$ weights, versus $k^2C+C^2$ for the factorized operation, excluding biases. Only \texttt{fusion3} ($C=64$) and \texttt{fusion4} ($C=128$) are replaced; all remaining modules and the ten-class output head remain unchanged. The proposed model is trained from a fresh initialization, without transferring baseline weights. The two standard $5\times5$ branches alone require 321.33 and 321.23 MMACs, respectively, which helps explain the observed benefit of their factorization. No change was made to the data-augmentation policy, feature attention, loss, or optimization schedule.
+
+\section{Experimental Protocol}
+Both variants use the same saved data partitions, preprocessing, random seed (42), Adam optimizer ($10^{-3}$), cross-entropy, batch size (32), and 200-epoch budget. The checkpoint with maximum validation accuracy is selected independently for each model; the test set is reserved for final comparison. The best baseline checkpoint occurs at epoch 146 (validation accuracy 99.39\%) and the proposed checkpoint at epoch 142 (99.31\%).
+
+We report test accuracy, macro-averaged precision/recall/F1, and macro one-vs-rest area under the precision--recall curve (AUPRC), computed from per-class softmax scores using average precision. Parameter counts and multiply--accumulate operations (MACs) are profiled with the same library and $224\times224$ input. GPU forward-pass latency is measured on a laptop NVIDIA GTX 1660 Ti Max-Q, using batch size one, 30 warm-up iterations, 200 timed iterations, and synchronization around measurements. The test uses a synthetic input and excludes image loading/preprocessing; hence it is not a full application or edge-device benchmark.
+
+To avoid silent cross-task contamination, the tomato subset is selected from an explicit directory, rather than from the additional three-class potato folders also present in the source dataset. Test class names are checked against the training and validation class ordering. Both checkpoints are loaded separately before evaluation, and softmax outputs are retained for the multiclass precision--recall analysis. The proposed training history is written to a CSV file after each epoch; checkpoint selection uses validation data only.
+
+\section{Results and Discussion}
+\subsection{Predictive Performance}
+Table~\ref{tab:performance} gives the held-out test results. The proposed model correctly classifies 1,816 of 1,825 images, compared with 1,815 for the baseline. The accuracy gain is only one additional image, or 0.055 percentage points. Macro-F1 improves by 0.154 points, whereas macro-AUPRC declines by approximately 0.020 points.
+
+\begin{table}[t]
+\centering
+\caption{Test metrics on the identical 1,825-image tomato split (\%).}
+\label{tab:performance}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrr}
+\toprule
+Metric & Baseline & Proposed\\
+\midrule
+Accuracy & 99.4521 & \textbf{99.5068}\\
+Macro-precision & 99.1917 & \textbf{99.4416}\\
+Macro-recall & 99.3801 & \textbf{99.4418}\\
+Macro-F1 & 99.2832 & \textbf{99.4371}\\
+Macro-AUPRC & \textbf{99.9773} & 99.9574\\
+Correct / 1,825 & 1,815 & 1,816\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For a paired comparison, seven test images are correctly classified only by the baseline, eight only by the proposed model, 1,808 by both, and two by neither. The exact two-sided McNemar test returns $p=1.000$; thus no statistically significant accuracy difference is detected. A non-significant result does \emph{not} establish formal equivalence.
+
+The confusion matrices in Fig.~\ref{fig:confusions} show that both models recognize every test image in the healthy, tomato mosaic virus, late blight, and yellow leaf curl virus categories. The most frequent residual confusion for the proposed model is spider mites versus target spot (four images). These patterns refer only to the current test split. Table~\ref{tab:perclass} provides the per-class counts underlying the visual analysis. The class distribution is uneven: the yellow leaf curl category has 537 test samples, whereas tomato mosaic virus has only 38. The macro averaging scheme avoids simply weighting large categories more heavily, but class-specific uncertainty remains greater for small categories.
+
+\begin{table}[t]
+\centering
+\caption{Correct predictions by class on the shared test set. Abbreviations follow Fig.~\ref{fig:confusions}.}
+\label{tab:perclass}
+\setlength{\tabcolsep}{4.3pt}
+\begin{tabular}{lrrr@{\hspace{7pt}}lrrr}
+\toprule
+Class & $N$ & Base & Lite & Class & $N$ & Base & Lite\\
+\midrule
+BS & 214 & 211 & 212 & SM & 168 & 165 & 164\\
+EB & 100 & 100 & 99 & TS & 142 & 140 & 141\\
+LB & 192 & 192 & 192 & YLCV & 537 & 537 & 537\\
+LM & 96 & 95 & 96 & TMV & 38 & 38 & 38\\
+SL & 178 & 177 & 177 & H & 160 & 160 & 160\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=.45\textwidth]{figures/confusion_baseline.pdf}\hfill
+\includegraphics[width=.45\textwidth]{figures/confusion_proposed.pdf}
+\caption{Held-out confusion matrices for the reproduced baseline (left) and proposed lightweight model (right). Abbreviations: BS--bacterial spot; EB--early blight; LB--late blight; LM--leaf mold; SL--Septoria leaf spot; SM--spider mites; TS--target spot; YLCV--yellow leaf curl virus; TMV--tomato mosaic virus; H--healthy. All entries are observed image counts.}
+\label{fig:confusions}
+\end{figure*}
+
+\subsection{Computational Efficiency}
+Table~\ref{tab:efficiency} and Fig.~\ref{fig:efficiency} quantify the efficiency trade-off. The lightweight model reduces parameter count by 84.88\% and profiled MACs by 80.01\%. Mean GPU latency decreases by 31.56\%, giving a measured 1.46$\times$ speedup. This smaller real-world gain relative to the MAC reduction reflects that operation counts alone do not determine runtime.
+
+\begin{table}[t]
+\centering
+\caption{Complexity and single-image GPU latency.}
+\label{tab:efficiency}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lrr}
+\toprule
+Metric & Baseline & Proposed\\
+\midrule
+Parameters & 764,376 & \textbf{115,544}\\
+MACs (G) & 1.0147 & \textbf{0.2028}\\
+Mean latency (ms) & 8.3623 & \textbf{5.7231}\\
+Median latency (ms) & 7.1014 & \textbf{5.4215}\\
+Mean-latency speedup & 1.00$\times$ & \textbf{1.46$\times$}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.96\columnwidth]{figures/efficiency.pdf}
+\caption{Parameter count, MACs and mean GPU latency normalized to the reproduced baseline (100\%). Lower is better.}
+\label{fig:efficiency}
+\end{figure}
+
+\subsection{Critical Discussion and Threats to Validity}
+The findings support the architectural hypothesis of lower resource demand with similar classification performance on the chosen split. Since $p=1.000$ does not establish equivalence, a future equivalence study should specify an acceptable accuracy margin in advance and estimate uncertainty across independent repetitions. To avoid over-interpreting an already saturated benchmark, the primary claim of this study concerns measured resource requirements, not predictive superiority. Both models were trained once under a single training seed; additional independent runs and uncertainty estimates are needed to assess stability. Since PlantVillage images are largely collected under controlled conditions, robustness to field lighting, background clutter, occlusion, and domain shift remains untested \cite{mohanty2016}.
+
+Further, measured GPU forward-pass latency is hardware- and implementation-dependent, and does not establish performance on mobile or embedded hardware. GPU kernel scheduling, memory transfers, and batch-size choices may make effective speedups smaller or larger than expected from MAC counts. The forward-pass benchmark omits decoding, preprocessing, and data movement from host memory, and would need to be repeated with realistic workloads for deployment claims. The reproducibility discrepancy with the published HPDC-Net parameter and FLOP figures remains unresolved, so claims are restricted to the supplied GitHub architecture and our locally measured experiments. Finally, the test-set difference of one image is too small to support a claim of consistent predictive superiority.
+
+\subsection{Reproducibility Artifacts}
+The experiment separates the baseline and modified notebooks and saves distinct checkpoints, avoiding accidental reuse of the trained original weights. Reported metrics come from local test predictions and the saved model profiling and latency outputs. The artifacts include per-epoch CSV training logs, test-metric CSV and JSON files, paired test predictions, a GPU latency benchmark, confusion matrices, and the exact official-repository commit identifier. Before publication, the repository should expose exact execution commands and a pinned dependency environment, making it possible to audit every reported value.
+
+\section{Conclusion}
+A controlled modification to HPDC-Net's two multi-scale fusion blocks reduced parameter count by 84.88\%, profiled MACs by 80.01\%, and mean batch-one GPU latency by 31.56\%. On the same 1,825-image tomato test set, accuracy remained statistically indistinguishable from the reproduced baseline. The result demonstrates a promising efficiency--accuracy trade-off for the \emph{released implementation}, rather than verified edge-device suitability. Future work should evaluate multiple seeds, more challenging field imagery, embedded-device latency, and the discrepancy between the publication and repository complexity specifications.
+
+\balance
+
+\begin{thebibliography}{00}
+
+\bibitem{asghar2025}
+M. Asghar et al.,
+``A lightweight hybrid model for scalable and robust
+plant leaf disease classification,''
+\emph{Scientific Reports},
+vol. 15, art. 32353, 2025.
+\href{https://doi.org/10.1038/s41598-025-08788-4}
+{doi: 10.1038/s41598-025-08788-4}.
+
+\bibitem{hpdcgithub}
+Z. F. Khan,
+``HPDC-Net: Official implementation,''
+GitHub, commit e2fa62706506806a41068f2e4ea63de83b9d31fb.
+[Online]. Available:
+\url{https://github.com/ZahidFarooqKhan/HPDC-Net}.
+
+\bibitem{mendeley2019}
+A. Pandian J and G. Gopal,
+``Data for: Identification of plant leaf diseases
+using a 9-layer deep convolutional neural network,''
+\emph{Mendeley Data}, ver. 1, 2019.
+\href{https://doi.org/10.17632/tywbtsjrjv.1}
+{doi: 10.17632/tywbtsjrjv.1}.
+
+\bibitem{mohanty2016}
+S. P. Mohanty, D. P. Hughes, and M. Salath\'e,
+``Using deep learning for image-based plant disease
+detection,''
+\emph{Frontiers in Plant Science},
+vol. 7, art. 1419, 2016.
+\href{https://doi.org/10.3389/fpls.2016.01419}
+{doi: 10.3389/fpls.2016.01419}.
+
+\bibitem{sandler2018}
+M. Sandler et al.,
+``MobileNetV2: Inverted residuals and linear
+bottlenecks,''
+in \emph{Proc. IEEE/CVF Conf. Computer Vision
+and Pattern Recognition},
+2018, pp. 4510--4520.
+\href{https://doi.org/10.1109/CVPR.2018.00474}
+{doi: 10.1109/CVPR.2018.00474}.
+
+\end{thebibliography}
+
+
+\end{document}
